@@ -27,31 +27,40 @@ type Fixture struct {
 	BrowserFamily string  `yaml:"browser_family"`
 }
 
-func (f *Fixture) Setup(m *Bitmaps) {
+func (f *Fixture) Setup(m *scopes) {
 	if f.Os != nil {
-		m.get("os").add(f.Os.o.Name)
-		m.get("os_version").add(f.Os.o.Version)
+		os := m.scope("os")
+		os.get("name").add(f.Os.o.Name)
+		os.get("version").add(f.Os.o.Version)
 	}
 	if f.Client != nil {
-		m.get("browser").add(f.Client.Name)
-		m.get("browser_version").add(f.Client.Version)
+		b := m.scope("browser")
+		b.get("name").add(f.Client.Name)
+		b.get("version").add(f.Client.Version)
 	}
 	if f.Device != nil {
-		m.get("device").add(f.Device.Type)
+		d := m.scope("device")
+		d.get("type").add(f.Device.Type)
 	}
 }
 
-func (f *Fixture) Set(m *Bitmaps, id uint64) {
+func (f *Fixture) Set(m *scopes, id uint64) {
 	if f.Bot != nil {
-		m.get("bot").b.SetValue(id, 1)
+		m.scope("bot").get("bot").b.SetValue(id, 1)
 	}
 	if f.Os != nil {
-		m.get("os").Set(id, f.Os.o.Name)
-		m.get("os_version").Set(id, f.Os.o.Version)
+		os := m.scope("os")
+		os.get("name").Set(id, f.Os.o.Name)
+		os.get("version").Set(id, f.Os.o.Version)
 	}
 	if f.Client != nil {
-		m.get("browser").Set(id, f.Client.Name)
-		m.get("browser_version").Set(id, f.Client.Version)
+		b := m.scope("browser")
+		b.get("name").Set(id, f.Client.Name)
+		b.get("version").Set(id, f.Client.Version)
+	}
+	if f.Device != nil {
+		d := m.scope("device")
+		d.get("type").Set(id, f.Device.Type)
 	}
 }
 
@@ -111,17 +120,42 @@ type Device struct {
 	Model string `yaml:"model"`
 }
 
-type Bitmaps struct {
-	m map[string]*BSI
+type ns map[string]*bsi
+
+func (n ns) translate() {
+	for _, v := range n {
+		v.translate()
+	}
 }
 
-func (b *Bitmaps) write(keys []string, path string) error {
+func (b ns) get(name string) *bsi {
+	if n, ok := b[name]; ok {
+		return n
+	}
+	n := &bsi{
+		name: name,
+		m:    make(map[string]int),
+		b:    roaring64.NewDefaultBSI(),
+	}
+	b[name] = n
+	return n
+}
+
+type scopes struct {
+	ns map[string]ns
+}
+
+func (b *scopes) write(keys []string, path string) error {
 	os.MkdirAll(path, 0755)
 	var buf bytes.Buffer
-	for _, m := range b.m {
-		err := m.write(&buf, path)
-		if err != nil {
-			return err
+	for k, n := range b.ns {
+		base := filepath.Join(path, k)
+		os.MkdirAll(base, 0755)
+		for _, m := range n {
+			err := m.write(&buf, base)
+			if err != nil {
+				return err
+			}
 		}
 	}
 	buf.Reset()
@@ -143,33 +177,29 @@ func (b *Bitmaps) write(keys []string, path string) error {
 	return os.WriteFile(file, zip(buf.Bytes()), 0600)
 }
 
-func (b *Bitmaps) translate() {
-	for _, m := range b.m {
+func (b *scopes) translate() {
+	for _, m := range b.ns {
 		m.translate()
 	}
 }
 
-func (b *Bitmaps) get(name string) *BSI {
-	if n, ok := b.m[name]; ok {
+func (b *scopes) scope(name string) ns {
+	if n, ok := b.ns[name]; ok {
 		return n
 	}
-	n := &BSI{
-		name: name,
-		m:    make(map[string]int),
-		b:    roaring64.NewDefaultBSI(),
-	}
-	b.m[name] = n
+	n := make(ns)
+	b.ns[name] = n
 	return n
 }
 
-type BSI struct {
+type bsi struct {
 	name string
 	m    map[string]int
 	keys []string
 	b    *roaring64.BSI
 }
 
-func (b *BSI) write(buf *bytes.Buffer, path string) error {
+func (b *bsi) write(buf *bytes.Buffer, path string) error {
 	if len(b.keys) > 0 {
 		data, _ := json.Marshal(b.keys)
 		file := filepath.Join(path, b.name+"_translate.json.gz")
@@ -184,15 +214,15 @@ func (b *BSI) write(buf *bytes.Buffer, path string) error {
 	return os.WriteFile(file, zip(buf.Bytes()), 0600)
 }
 
-func (b *BSI) add(name string) {
+func (b *bsi) add(name string) {
 	b.m[name] = 0
 }
 
-func (b *BSI) Set(id uint64, name string) {
+func (b *bsi) Set(id uint64, name string) {
 	b.b.SetValue(id, int64(b.m[name]))
 }
 
-func (b *BSI) translate() {
+func (b *bsi) translate() {
 	b.keys = make([]string, 0, len(b.m))
 	for k := range b.m {
 		b.keys = append(b.keys, k)
@@ -211,8 +241,8 @@ func main() {
 		log.Fatal(err)
 	}
 	m := make(map[string]*Fixture)
-	bm := &Bitmaps{
-		m: make(map[string]*BSI),
+	bm := &scopes{
+		ns: make(map[string]ns),
 	}
 	for _, file := range files {
 		if file.IsDir() {
