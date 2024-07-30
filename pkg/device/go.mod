@@ -1,4 +1,4 @@
-module github/gernest/vice/pkg/device
+module github.com/gernest/vice/pkg/device
 
 go 1.22.5
 

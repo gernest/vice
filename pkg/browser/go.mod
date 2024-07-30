@@ -1,4 +1,4 @@
-module github/gernest/vice/pkg/browser
+module github.com/gernest/vice/pkg/browser
 
 go 1.22.5
 

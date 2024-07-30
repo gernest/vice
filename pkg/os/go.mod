@@ -1,4 +1,4 @@
-module github/gernest/vice/pkg/os
+module github.com/gernest/vice/pkg/os
 
 go 1.22.5
 

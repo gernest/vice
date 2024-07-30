@@ -1,4 +1,4 @@
-module github/gernest/vice/pkg/bot
+module github.com/gernest/vice/pkg/bot
 
 go 1.22.5
 

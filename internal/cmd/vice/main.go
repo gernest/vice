@@ -325,7 +325,7 @@ func zip(data []byte) []byte {
 	return zipBuf.Bytes()
 }
 
-const root = "github/gernest/vice/pkg/"
+const root = "github.com/gernest/vice/pkg/"
 
 func buildBSIModule(name string) []byte {
 	m, err := module(root+name, droar)
