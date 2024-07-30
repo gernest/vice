@@ -6,13 +6,18 @@ import (
 	"encoding/json"
 	"errors"
 	"flag"
+	"go/format"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime/debug"
 	"slices"
 	"sort"
+	"strings"
+	"text/template"
+	"unicode"
 
 	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	"github.com/blevesearch/vellum"
@@ -151,16 +156,24 @@ type scopes struct {
 func (b *scopes) write(keys []string, path string) error {
 	os.MkdirAll(path, 0755)
 	var buf bytes.Buffer
+	var names []string
 	for k, n := range b.ns {
 		base := filepath.Join(path, k)
 		os.MkdirAll(base, 0755)
-		for _, m := range n {
+		names = names[:0]
+		for name, m := range n {
+			names = append(names, name)
 			err := m.write(&buf, base)
 			if err != nil {
 				return err
 			}
 		}
+		slices.Sort(names)
 		os.WriteFile(filepath.Join(base, "go.mod"), buildBSIModule(k), 0600)
+		os.WriteFile(filepath.Join(base, k+".go"), buildBSI(
+			k, names, k != "bot",
+		), 0600)
+		tidy(base)
 	}
 	buf.Reset()
 	build, err := vellum.New(&buf, nil)
@@ -182,7 +195,9 @@ func (b *scopes) write(keys []string, path string) error {
 	file := filepath.Join(base, "fst.gz")
 	return errors.Join(
 		os.WriteFile(file, zip(buf.Bytes()), 0600),
+		os.WriteFile(filepath.Join(base, "fst.go"), []byte(fstFile), 0600),
 		os.WriteFile(filepath.Join(base, "go.mod"), buildFstModule("fst"), 0600),
+		tidy(base),
 	)
 }
 
@@ -281,7 +296,7 @@ func main() {
 	for i := range names {
 		m[names[i]].Set(bm, uint64(i))
 	}
-	err = bm.write(names, "data")
+	err = bm.write(names, "pkg")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -358,4 +373,130 @@ func (d deps) Dep() (string, string) {
 		return "github.com/blevesearch/vellum", "v1.0.10"
 	}
 	return "github.com/RoaringBitmap/roaring/v2", "v2.3.1"
+}
+
+func tidy(path string) error {
+	cmd := exec.Command("go", "mod", "tidy")
+	cmd.Dir = path
+	cmd.Stderr = os.Stderr
+	cmd.Stdout = os.Stdout
+	return cmd.Run()
+}
+
+const fstFile = `package fst
+
+import (
+	_ "embed"
+	"sync"
+
+	"github.com/blevesearch/vellum"
+)
+
+//go:embed fst.gz
+var fstData []byte
+
+var once sync.Once
+var fst *vellum.FST
+
+func Fst() *vellum.FST {
+	once.Do(func() {
+		var err error
+		fst, err = vellum.Load(fstData)
+		if err != nil {
+			// Highly unlikely because we generate the archive separately.
+			panic("corrupt fst archive " + err.Error())
+		}
+	})
+	return fst
+}
+`
+
+var btpl = template.Must(template.New("bsi").Funcs(template.FuncMap{"ident": Ident}).Parse(`package {{.pkg}}
+
+import (
+	"bytes"
+	{{if .isString}}"encoding/json"{{end}}
+	_ "embed"
+	"sync"
+
+	"github.com/RoaringBitmap/roaring/v2/roaring64"
+)
+var(
+{{- range .names}}
+//go:embed {{.}}.bsi.gz
+ {{.}}BSIData []byte
+ {{.}}BSI = roaring64.NewDefaultBSI()
+{{end}}
+{{if .isString}}
+{{range .names}}
+//go:embed {{.}}_translate.json.gz
+ {{.}}TranslateData []byte
+ {{.}}Translate []string
+{{end}}
+{{end}}
+)
+
+var once sync.Once
+
+func setup() {
+	once.Do(func() {
+{{- range .names -}}
+ {{.}}BSI.ReadFrom(bytes.NewReader({{.}}BSIData))
+{{end -}}
+{{if .isString}}
+{{- range .names -}}
+ json.Unmarshal({{.}}TranslateData,&{{.}}Translate)
+{{end -}}
+{{end -}}
+	})
+}
+
+{{if .isString}}
+{{range .names}}
+func Get{{.|ident}}(id uint64) string {
+	setup()
+	value, ok := {{.}}BSI.GetValue(id)
+	if !ok {
+		return ""
+	}
+	return {{.}}Translate[value]
+}
+{{end}}
+{{else}}
+{{- range .names -}}
+func Get{{.|ident}}(id uint64)bool  {
+	setup()
+	value, _ := {{.}}BSI.GetValue(id)
+	return value == 1
+}
+{{end}}
+{{end}}
+`))
+
+func buildBSI(pkg string, names []string, isString bool) []byte {
+	b := new(bytes.Buffer)
+	err := btpl.Execute(b, map[string]any{
+		"pkg":      pkg,
+		"names":    names,
+		"isString": isString,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+	o, err := format.Source(b.Bytes())
+	if err != nil {
+		log.Fatal(err)
+	}
+	return o
+}
+
+func Ident(n string) string {
+	var ok bool
+	return strings.Map(func(r rune) rune {
+		if ok {
+			return r
+		}
+		ok = true
+		return unicode.ToTitle(r)
+	}, n)
 }
