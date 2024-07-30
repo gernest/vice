@@ -381,7 +381,7 @@ import (
 	_ "embed"
 	"io"
 	"sync"
-	
+
 	"github.com/blevesearch/vellum"
 )
 
@@ -451,7 +451,6 @@ func unpackJSON(data []byte, b any) error {
 func setup() {
 	once.Do(func() {
 {{- range .names -}}
- {{.}}BSI.ReadFrom(bytes.NewReader({{.}}BSIData))
  unpackBSI({{.}}BSIData,{{.}}BSI)
 {{end -}}
 {{if .isString}}

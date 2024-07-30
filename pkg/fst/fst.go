@@ -6,7 +6,7 @@ import (
 	_ "embed"
 	"io"
 	"sync"
-	
+
 	"github.com/blevesearch/vellum"
 )
 

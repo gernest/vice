@@ -41,7 +41,6 @@ func unpackJSON(data []byte, b any) error {
 
 func setup() {
 	once.Do(func() {
-		typeBSI.ReadFrom(bytes.NewReader(typeBSIData))
 		unpackBSI(typeBSIData, typeBSI)
 		unpackJSON(typeTranslateData, &typeTranslate)
 	})
