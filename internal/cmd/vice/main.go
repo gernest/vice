@@ -173,7 +173,9 @@ func (b *scopes) write(keys []string, path string) error {
 	if err != nil {
 		return err
 	}
-	file := filepath.Join(path, "fst.gz")
+	base := filepath.Join(path, "fst")
+	os.MkdirAll(base, 0755)
+	file := filepath.Join(base, "fst.gz")
 	return os.WriteFile(file, zip(buf.Bytes()), 0600)
 }
 
