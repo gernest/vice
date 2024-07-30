@@ -5,6 +5,7 @@ go 1.22.5
 require (
 	github.com/RoaringBitmap/roaring/v2 v2.3.1
 	github.com/blevesearch/vellum v1.0.10
+	golang.org/x/mod v0.19.0
 	gopkg.in/yaml.v2 v2.4.0
 )
 

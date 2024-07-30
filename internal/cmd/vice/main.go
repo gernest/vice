@@ -4,16 +4,19 @@ import (
 	"bytes"
 	"compress/gzip"
 	"encoding/json"
+	"errors"
 	"flag"
 	"io"
 	"log"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"slices"
 	"sort"
 
 	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	"github.com/blevesearch/vellum"
+	"golang.org/x/mod/modfile"
 	"gopkg.in/yaml.v2"
 )
 
@@ -157,6 +160,7 @@ func (b *scopes) write(keys []string, path string) error {
 				return err
 			}
 		}
+		os.WriteFile(filepath.Join(base, "go.mod"), buildBSIModule(k), 0600)
 	}
 	buf.Reset()
 	build, err := vellum.New(&buf, nil)
@@ -176,7 +180,10 @@ func (b *scopes) write(keys []string, path string) error {
 	base := filepath.Join(path, "fst")
 	os.MkdirAll(base, 0755)
 	file := filepath.Join(base, "fst.gz")
-	return os.WriteFile(file, zip(buf.Bytes()), 0600)
+	return errors.Join(
+		os.WriteFile(file, zip(buf.Bytes()), 0600),
+		os.WriteFile(filepath.Join(base, "go.mod"), buildFstModule("fst"), 0600),
+	)
 }
 
 func (b *scopes) translate() {
@@ -303,4 +310,52 @@ func zip(data []byte) []byte {
 	w.Write(data)
 	w.Close()
 	return zipBuf.Bytes()
+}
+
+const root = "github/gernest/vice."
+
+func buildFstModule(name string) []byte {
+	m, err := module(root+name, dvellum)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return m
+}
+
+func buildBSIModule(name string) []byte {
+	m, err := module(root+name, droar)
+	if err != nil {
+		log.Fatal(err)
+	}
+	return m
+}
+
+func module(name string, deps ...deps) ([]byte, error) {
+	f, err := modfile.ParseLax("", []byte("module "+name), nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	b, _ := debug.ReadBuildInfo()
+	f.AddGoStmt(b.GoVersion)
+	for i := range deps {
+		err := f.AddRequire(deps[i].Dep())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return f.Format()
+}
+
+type deps uint
+
+const (
+	droar deps = iota
+	dvellum
+)
+
+func (d deps) Dep() (string, string) {
+	if d == dvellum {
+		return "github.com/blevesearch/vellum", "v1.0.10"
+	}
+	return "github.com/RoaringBitmap/roaring/v2", "v2.3.1"
 }
