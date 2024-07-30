@@ -10,9 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime/debug"
 	"slices"
 	"sort"
 	"strings"
@@ -21,7 +19,6 @@ import (
 
 	"github.com/RoaringBitmap/roaring/v2/roaring64"
 	"github.com/blevesearch/vellum"
-	"golang.org/x/mod/modfile"
 	"gopkg.in/yaml.v2"
 )
 
@@ -169,11 +166,9 @@ func (b *scopes) write(keys []string, path string) error {
 			}
 		}
 		slices.Sort(names)
-		os.WriteFile(filepath.Join(base, "go.mod"), buildBSIModule(k), 0600)
 		os.WriteFile(filepath.Join(base, k+".go"), buildBSI(
 			k, names, k != "bot",
 		), 0600)
-		tidy(base)
 	}
 	buf.Reset()
 	build, err := vellum.New(&buf, nil)
@@ -323,54 +318,6 @@ func zip(data []byte) []byte {
 	w.Write(data)
 	w.Close()
 	return zipBuf.Bytes()
-}
-
-const root = "github.com/gernest/vice/pkg/"
-
-func buildBSIModule(name string) []byte {
-	m, err := module(root+name, droar)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return m
-}
-
-func module(name string, deps ...deps) ([]byte, error) {
-	f, err := modfile.ParseLax("", []byte("module "+name), nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	b, _ := debug.ReadBuildInfo()
-	f.AddGoStmt(b.GoVersion)
-	for i := range deps {
-		err := f.AddRequire(deps[i].Dep())
-		if err != nil {
-			return nil, err
-		}
-	}
-	return f.Format()
-}
-
-type deps uint
-
-const (
-	droar deps = iota
-	dvellum
-)
-
-func (d deps) Dep() (string, string) {
-	if d == dvellum {
-		return "github.com/blevesearch/vellum", "v1.0.10"
-	}
-	return "github.com/RoaringBitmap/roaring/v2", "v2.3.1"
-}
-
-func tidy(path string) error {
-	cmd := exec.Command("go", "mod", "tidy")
-	cmd.Dir = path
-	cmd.Stderr = os.Stderr
-	cmd.Stdout = os.Stdout
-	return cmd.Run()
 }
 
 const fstFile = `package fst
