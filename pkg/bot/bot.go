@@ -3,6 +3,7 @@ package bot
 import (
 	"bytes"
 
+	"compress/gzip"
 	_ "embed"
 	"sync"
 
@@ -17,9 +18,19 @@ var (
 
 var once sync.Once
 
+func unpackBSI(data []byte, b *roaring64.BSI) error {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	_, err = b.ReadFrom(r)
+	return err
+}
+
 func setup() {
 	once.Do(func() {
 		botBSI.ReadFrom(bytes.NewReader(botBSIData))
+		unpackBSI(botBSIData, botBSI)
 	})
 }
 

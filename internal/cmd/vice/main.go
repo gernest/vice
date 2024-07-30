@@ -376,9 +376,12 @@ func tidy(path string) error {
 const fstFile = `package fst
 
 import (
+	"bytes"
+	"compress/gzip"
 	_ "embed"
+	"io"
 	"sync"
-
+	
 	"github.com/blevesearch/vellum"
 )
 
@@ -390,12 +393,9 @@ var fst *vellum.FST
 
 func Get() *vellum.FST {
 	once.Do(func() {
-		var err error
-		fst, err = vellum.Load(fstData)
-		if err != nil {
-			// Highly unlikely because we generate the archive separately.
-			panic("corrupt fst archive " + err.Error())
-		}
+		r, _ := gzip.NewReader(bytes.NewReader(fstData))
+		all, _ := io.ReadAll(r)
+		fst, _ = vellum.Load(all)
 	})
 	return fst
 }
@@ -408,6 +408,7 @@ import (
 	{{if .isString}}"encoding/json"{{end}}
 	_ "embed"
 	"sync"
+	"compress/gzip"
 
 	"github.com/RoaringBitmap/roaring/v2/roaring64"
 )
@@ -428,14 +429,34 @@ var(
 
 var once sync.Once
 
+func unpackBSI(data []byte, b *roaring64.BSI) error {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	_, err = b.ReadFrom(r)
+	return err
+}
+
+{{if .isString}}
+func unpackJSON(data []byte, b any) error {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	return json.NewDecoder(r).Decode(b)
+}
+{{end}}
+
 func setup() {
 	once.Do(func() {
 {{- range .names -}}
  {{.}}BSI.ReadFrom(bytes.NewReader({{.}}BSIData))
+ unpackBSI({{.}}BSIData,{{.}}BSI)
 {{end -}}
 {{if .isString}}
 {{- range .names -}}
- json.Unmarshal({{.}}TranslateData,&{{.}}Translate)
+ unpackJSON({{.}}TranslateData,&{{.}}Translate)
 {{end -}}
 {{end -}}
 	})

@@ -2,6 +2,7 @@ package device
 
 import (
 	"bytes"
+	"compress/gzip"
 	_ "embed"
 	"encoding/json"
 	"sync"
@@ -21,10 +22,28 @@ var (
 
 var once sync.Once
 
+func unpackBSI(data []byte, b *roaring64.BSI) error {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	_, err = b.ReadFrom(r)
+	return err
+}
+
+func unpackJSON(data []byte, b any) error {
+	r, err := gzip.NewReader(bytes.NewReader(data))
+	if err != nil {
+		return err
+	}
+	return json.NewDecoder(r).Decode(b)
+}
+
 func setup() {
 	once.Do(func() {
 		typeBSI.ReadFrom(bytes.NewReader(typeBSIData))
-		json.Unmarshal(typeTranslateData, &typeTranslate)
+		unpackBSI(typeBSIData, typeBSI)
+		unpackJSON(typeTranslateData, &typeTranslate)
 	})
 }
 

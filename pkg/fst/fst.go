@@ -1,9 +1,12 @@
 package fst
 
 import (
+	"bytes"
+	"compress/gzip"
 	_ "embed"
+	"io"
 	"sync"
-
+	
 	"github.com/blevesearch/vellum"
 )
 
@@ -15,12 +18,9 @@ var fst *vellum.FST
 
 func Get() *vellum.FST {
 	once.Do(func() {
-		var err error
-		fst, err = vellum.Load(fstData)
-		if err != nil {
-			// Highly unlikely because we generate the archive separately.
-			panic("corrupt fst archive " + err.Error())
-		}
+		r, _ := gzip.NewReader(bytes.NewReader(fstData))
+		all, _ := io.ReadAll(r)
+		fst, _ = vellum.Load(all)
 	})
 	return fst
 }
