@@ -196,8 +196,6 @@ func (b *scopes) write(keys []string, path string) error {
 	return errors.Join(
 		os.WriteFile(file, zip(buf.Bytes()), 0600),
 		os.WriteFile(filepath.Join(base, "fst.go"), []byte(fstFile), 0600),
-		os.WriteFile(filepath.Join(base, "go.mod"), buildFstModule("fst"), 0600),
-		tidy(base),
 	)
 }
 
@@ -327,15 +325,7 @@ func zip(data []byte) []byte {
 	return zipBuf.Bytes()
 }
 
-const root = "github/gernest/vice."
-
-func buildFstModule(name string) []byte {
-	m, err := module(root+name, dvellum)
-	if err != nil {
-		log.Fatal(err)
-	}
-	return m
-}
+const root = "github/gernest/vice/pkg/"
 
 func buildBSIModule(name string) []byte {
 	m, err := module(root+name, droar)
@@ -398,7 +388,7 @@ var fstData []byte
 var once sync.Once
 var fst *vellum.FST
 
-func Fst() *vellum.FST {
+func Get() *vellum.FST {
 	once.Do(func() {
 		var err error
 		fst, err = vellum.Load(fstData)

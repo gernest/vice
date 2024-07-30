@@ -13,7 +13,7 @@ var fstData []byte
 var once sync.Once
 var fst *vellum.FST
 
-func Fst() *vellum.FST {
+func Get() *vellum.FST {
 	once.Do(func() {
 		var err error
 		fst, err = vellum.Load(fstData)
